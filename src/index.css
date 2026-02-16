@@ -1,0 +1,9 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 你可以加上這段讓背景預設全黑，避免閃爍 */
+body {
+  background-color: #000;
+  color: white;
+}
