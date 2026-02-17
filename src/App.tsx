@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence, Reorder } from 'framer-motion';
+import { motion, AnimatePresence, Reorder, useDragControls } from 'framer-motion';
 import { 
   CheckCircle2, Plus, ArrowLeft, Calendar, 
-  Clock, Trash2, ChevronRight, BarChart3, List, Flame, Zap, Trophy, X, GripVertical
+  Clock, Trash2, ChevronRight, BarChart3, List, Flame, Zap, Trophy, X, GripVertical, Timer
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -22,6 +22,68 @@ const formatDuration = (minutes) => {
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
+// --- 獨立的拖曳組件 (防誤觸關鍵) ---
+const SortableTaskItem = ({ task, updateTaskStatus, deleteTask, toggleTaskToday }) => {
+  const controls = useDragControls(); // 獨立的拖曳控制器
+
+  const colorStyles = {
+    big: "bg-orange-500 shadow-orange-500/30",
+    medium: "bg-blue-600 shadow-blue-600/30",
+    small: "bg-emerald-500 shadow-emerald-500/30"
+  };
+
+  return (
+    <Reorder.Item 
+      value={task} 
+      dragListener={false} // 關閉預設的全卡片拖曳
+      dragControls={controls} // 只接受控制器指令
+      className="relative touch-action-none" // 防止觸控衝突
+    >
+      <div className={cn(
+          "mb-3 p-4 rounded-3xl shadow-lg relative overflow-hidden group border border-white/10 select-none flex items-center gap-3",
+          colorStyles[task.size] || "bg-zinc-800"
+        )}
+      >
+        {/* 內容區 */}
+        <div className="flex-1 relative z-10 flex flex-col items-start justify-center gap-1 pl-2">
+          <h3 className="font-bold text-white text-lg drop-shadow-md text-left leading-tight">{task.title}</h3>
+          <div className="flex items-center gap-2 text-[10px] font-bold text-white/80 bg-black/20 px-3 py-1 rounded-full uppercase tracking-wider">
+            <span>{task.size}</span>
+            <span>•</span>
+            <span>{task.size === 'big' ? '90m' : task.size === 'medium' ? '30m' : '10m'}</span>
+          </div>
+        </div>
+
+        {/* 動作按鈕區 (右側) */}
+        <div className="flex items-center gap-2 relative z-20">
+            <button 
+              onClick={(e) => { e.stopPropagation(); toggleTaskToday(task.id); }} 
+              className={cn("p-2 rounded-full text-white hover:text-black transition-colors", task.isToday ? "bg-green-500" : "bg-white/20 hover:bg-white")}
+            >
+              <Plus size={20}/>
+            </button>
+            
+            {/* 只有按住這個圖示才能拖動 */}
+            <div 
+              onPointerDown={(e) => controls.start(e)}
+              className="p-2 rounded-full text-white/50 hover:text-white cursor-grab active:cursor-grabbing bg-black/20"
+            >
+              <GripVertical size={20}/>
+            </div>
+
+            <button onClick={(e) => { e.stopPropagation(); deleteTask(task.id); }} className="bg-black/20 p-2 rounded-full hover:bg-red-500 text-white">
+              <Trash2 size={20}/>
+            </button>
+        </div>
+
+        {/* 裝飾紋理 */}
+        <div className="absolute inset-0 bg-gradient-to-br from-white/20 to-transparent pointer-events-none" />
+      </div>
+    </Reorder.Item>
+  );
+};
+
+// --- 主程式 ---
 export default function App() {
   const [view, setView] = useState('home');
   const [activeProject, setActiveProject] = useState(null);
@@ -49,7 +111,7 @@ export default function App() {
     return localStorage.getItem('my-135-lastActive') || new Date().toDateString();
   });
 
-  // --- 持久化與邏輯 ---
+  // --- 持久化 ---
   useEffect(() => {
     localStorage.setItem('my-135-projects', JSON.stringify(projects));
     localStorage.setItem('my-135-tasks', JSON.stringify(tasks));
@@ -57,6 +119,7 @@ export default function App() {
     localStorage.setItem('my-135-lastActive', lastActive);
   }, [projects, tasks, streak, lastActive]);
 
+  // 連勝 & 每日重置
   useEffect(() => {
     const today = new Date().toDateString();
     if (lastActive !== today) {
@@ -67,9 +130,7 @@ export default function App() {
       }
       setLastActive(today);
     }
-  }, []);
 
-  useEffect(() => {
     const checkReset = () => {
       const now = new Date();
       if (now.getHours() >= 23) {
@@ -81,7 +142,7 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // --- 核心演算法 ---
+  // --- 邏輯計算 ---
   const getProjectStats = (projectId) => {
     const pTasks = tasks.filter(t => t.projectId === projectId && !t.completed);
     const totalMinutes = pTasks.reduce((acc, t) => {
@@ -102,8 +163,6 @@ export default function App() {
   };
 
   // --- 動作 ---
-  
-  // 安全的特效觸發函數
   const triggerConfetti = () => {
     try {
       if (typeof confetti === 'function') {
@@ -114,9 +173,7 @@ export default function App() {
           colors: ['#FFD700', '#FFA500', '#00FF00', '#00BFFF']
         });
       }
-    } catch (e) {
-      console.warn("Confetti effect failed:", e);
-    }
+    } catch (e) { console.warn(e); }
   };
 
   const addProject = (name, goal, deadline) => {
@@ -141,12 +198,8 @@ export default function App() {
     }]);
   };
 
-  // 修正後的完成任務邏輯
   const completeTask = (taskId) => {
-    // 1. 先放煙火 (包在 try-catch 確保不影響後續)
     triggerConfetti();
-    
-    // 2. 再更新資料 (使用 functional update 確保資料最新)
     setTasks(prevTasks => prevTasks.map(t => 
       t.id === taskId 
         ? { ...t, completed: true, completedAt: new Date(), isToday: false } 
@@ -176,13 +229,18 @@ export default function App() {
   };
 
   const handleReorder = (newProjectTasksOrder) => {
-    const otherTasks = tasks.filter(t => t.projectId !== activeProject.id);
-    setTasks([...otherTasks, ...newProjectTasksOrder]);
+    // 這裡我們需要把 "沒有顯示在列表上" 的任務 (例如已完成或已加入今日的) 也保留
+    const currentProjectVisibleIds = newProjectTasksOrder.map(t => t.id);
+    
+    // 1. 找出所有不在此次排序列表中的任務 (其他專案 + 本專案已隱藏的)
+    const otherTasks = tasks.filter(t => !currentProjectVisibleIds.includes(t.id));
+    
+    // 2. 合併 (新順序在前，其他的在後)
+    setTasks([...newProjectTasksOrder, ...otherTasks]);
   };
 
-  // --- UI 元件 ---
-
-  const TaskItem = ({ task, isProjectView = false, isHomeView = false }) => {
+  // --- UI 元件：主頁任務卡 (不可拖曳) ---
+  const HomeTaskItem = ({ task }) => {
     const colorStyles = {
       big: "bg-orange-500 shadow-orange-500/30",
       medium: "bg-blue-600 shadow-blue-600/30",
@@ -200,58 +258,32 @@ export default function App() {
           <div className="flex items-center gap-2 text-[10px] font-bold text-white/80 bg-black/20 px-3 py-1 rounded-full uppercase tracking-wider">
             <span>{task.size}</span>
             <span>•</span>
-            <span>{task.size === 'big' ? '90m' : task.size === 'medium' ? '30m' : '10m'}</span>
-            {!isProjectView && (
-               <>
-                 <span>•</span>
-                 <span className="max-w-[80px] truncate">{projects.find(p => p.id === task.projectId)?.name}</span>
-               </>
-            )}
+            <span>{projects.find(p => p.id === task.projectId)?.name}</span>
           </div>
         </div>
 
         <div className="absolute right-3 top-1/2 -translate-y-1/2 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity z-20">
-           {isProjectView ? (
-             <>
-                <button 
-                  onClick={(e) => { e.stopPropagation(); toggleTaskToday(task.id); }} 
-                  className={cn("p-2 rounded-full text-white hover:text-black transition-colors", task.isToday ? "bg-green-500 hover:bg-red-500" : "bg-white/20 hover:bg-white")}
-                >
-                  {task.isToday ? <CheckCircle2 size={16}/> : <Plus size={16}/>}
-                </button>
-                <button onClick={(e) => { e.stopPropagation(); deleteTask(task.id); }} className="bg-black/20 p-2 rounded-full hover:bg-red-500 text-white">
-                  <Trash2 size={16}/>
-                </button>
-                <div className="bg-black/20 p-2 rounded-full text-white/50 cursor-grab active:cursor-grabbing">
-                  <GripVertical size={16}/>
-                </div>
-             </>
-           ) : isHomeView ? (
-             <>
-               <button 
-                 onClick={(e) => { e.stopPropagation(); toggleTaskToday(task.id); }} 
-                 className="bg-black/40 p-2 rounded-full hover:bg-red-500 text-white/80 hover:text-white" 
-                 title="退回專案"
-               >
-                 <X size={18} />
-               </button>
-               <button 
-                 onClick={(e) => { e.stopPropagation(); completeTask(task.id); }} 
-                 className="bg-white text-black p-2 rounded-full shadow-xl hover:scale-110 transition-transform" 
-                 title="完成任務"
-               >
-                 <CheckCircle2 size={20} />
-               </button>
-             </>
-           ) : null}
+           <button 
+             onClick={(e) => { e.stopPropagation(); toggleTaskToday(task.id); }} 
+             className="bg-black/40 p-2 rounded-full hover:bg-red-500 text-white/80 hover:text-white backdrop-blur-md" 
+             title="退回專案"
+           >
+             <X size={18} />
+           </button>
+           <button 
+             onClick={(e) => { e.stopPropagation(); completeTask(task.id); }} 
+             className="bg-white text-black p-2 rounded-full shadow-xl hover:scale-110 transition-transform" 
+             title="完成任務"
+           >
+             <CheckCircle2 size={20} />
+           </button>
         </div>
-
         <div className="absolute inset-0 bg-gradient-to-br from-white/20 to-transparent pointer-events-none" />
       </div>
     );
   };
 
-  // --- 視圖頁面 ---
+  // --- 視圖 ---
 
   const HomeView = () => {
     const todayTasks = tasks.filter(t => t.isToday && !t.completed);
@@ -270,14 +302,12 @@ export default function App() {
               <AnimatePresence>
                 {slotTasks.map(t => (
                    <motion.div key={t.id} layoutId={t.id} initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}>
-                      <TaskItem task={t} isHomeView={true} />
+                      <HomeTaskItem task={t} />
                    </motion.div>
                 ))}
               </AnimatePresence>
               {slotTasks.length === 0 && (
-                <div className="text-center text-white/10 text-xs py-4 font-bold tracking-wider">
-                  等待指派...
-                </div>
+                <div className="text-center text-white/10 text-xs py-4 font-bold tracking-wider">等待指派...</div>
               )}
            </div>
         </div>
@@ -290,14 +320,12 @@ export default function App() {
           <button onClick={() => setView('projects')} className="p-3 bg-zinc-800 rounded-2xl hover:bg-zinc-700">
             <List className="text-white" />
           </button>
-          
           <div className="flex flex-col items-center">
             <div className="flex items-center gap-1 text-orange-500 font-black text-2xl">
                <Flame fill="currentColor" /> {streak}
             </div>
             <div className="text-[10px] text-white/30 uppercase tracking-widest font-bold">Day Streak</div>
           </div>
-
           <button onClick={() => setView('completed')} className="p-3 bg-zinc-800 rounded-2xl hover:bg-zinc-700">
             <Trophy className="text-yellow-500" />
           </button>
@@ -309,11 +337,7 @@ export default function App() {
              <span>{energyPercent}%</span>
            </div>
            <div className="h-3 bg-zinc-800 rounded-full overflow-hidden">
-             <motion.div 
-               initial={{ width: 0 }}
-               animate={{ width: `${energyPercent}%` }}
-               className="h-full bg-gradient-to-r from-green-400 via-blue-500 to-purple-500"
-             />
+             <motion.div initial={{ width: 0 }} animate={{ width: `${energyPercent}%` }} className="h-full bg-gradient-to-r from-green-400 via-blue-500 to-purple-500" />
            </div>
         </div>
 
@@ -361,9 +385,7 @@ export default function App() {
             const daysLeft = Math.ceil((new Date(p.deadline) - new Date()) / (86400000));
             
             return (
-              <motion.div 
-                key={p.id} layout
-                onClick={() => { setActiveProject(p); setView('project-detail'); }}
+              <motion.div key={p.id} layout onClick={() => { setActiveProject(p); setView('project-detail'); }}
                 className={cn("p-6 rounded-3xl cursor-pointer bg-gradient-to-br border shadow-xl group text-center relative overflow-hidden", getHeatStyle(urgency))}
               >
                 <h2 className="text-2xl font-black text-white mb-2 drop-shadow-md">{p.name}</h2>
@@ -380,23 +402,21 @@ export default function App() {
             );
           })}
         </div>
-
-        <button onClick={() => setIsAdding(true)} className="fixed bottom-8 right-8 w-16 h-16 bg-white text-black rounded-full flex items-center justify-center shadow-2xl shadow-white/20 z-50 hover:scale-110 transition-transform">
-          <Plus size={32} strokeWidth={3} />
-        </button>
+        <button onClick={() => setIsAdding(true)} className="fixed bottom-8 right-8 w-16 h-16 bg-white text-black rounded-full flex items-center justify-center shadow-2xl shadow-white/20 z-50 hover:scale-110 transition-transform"><Plus size={32} strokeWidth={3} /></button>
       </div>
     );
   };
 
   const ProjectDetailView = () => {
     if (!activeProject) return null;
-    const pTasks = tasks.filter(t => t.projectId === activeProject.id && !t.completed);
+    // 關鍵修改：過濾掉已完成 AND 已加入今日清單的任務
+    const pTasks = tasks.filter(t => t.projectId === activeProject.id && !t.completed && !t.isToday);
     const [newTaskTitle, setNewTaskTitle] = useState('');
     const [newTaskSize, setNewTaskSize] = useState('medium'); 
 
     return (
-      <div className="p-6 min-h-screen bg-[#121212]">
-        <header className="flex items-center justify-between mb-8 pt-4">
+      <div className="p-6 min-h-screen bg-[#121212] flex flex-col h-screen">
+        <header className="flex items-center justify-between mb-8 pt-4 flex-shrink-0">
           <button onClick={() => setView('projects')} className="p-3 bg-zinc-800 rounded-2xl">
             <ArrowLeft className="text-white" />
           </button>
@@ -409,7 +429,8 @@ export default function App() {
           </button>
         </header>
 
-        <div className="bg-zinc-900 p-4 rounded-3xl mb-8 border border-zinc-800 sticky top-4 z-40 shadow-2xl">
+        {/* 輸入區 */}
+        <div className="bg-zinc-900 p-4 rounded-3xl mb-4 border border-zinc-800 flex-shrink-0 shadow-xl z-20">
            <div className="flex gap-2 mb-3">
               {['big', 'medium', 'small'].map(size => (
                 <button key={size} onClick={() => setNewTaskSize(size)} 
@@ -431,21 +452,35 @@ export default function App() {
             </div>
         </div>
 
-        <Reorder.Group axis="y" values={pTasks} onReorder={handleReorder} className="space-y-4 pb-20">
-          {pTasks.map((t) => (
-             <Reorder.Item key={t.id} value={t} whileDrag={{ scale: 1.05 }} className="touch-none">
-               <TaskItem task={t} isProjectView={true} />
-             </Reorder.Item>
-          ))}
-        </Reorder.Group>
-        
-        {pTasks.length === 0 && <div className="text-center text-zinc-800 font-bold text-6xl opacity-20 mt-20">EMPTY</div>}
+        {/* 滾動列表區 (加入 overflow-y-auto 與 scrollbar 樣式) */}
+        <div className="flex-1 overflow-y-auto pr-1 -mr-2 pb-20 custom-scrollbar">
+          <Reorder.Group axis="y" values={pTasks} onReorder={handleReorder} className="space-y-4">
+            {pTasks.map((t) => (
+               <SortableTaskItem 
+                 key={t.id} 
+                 task={t} 
+                 updateTaskStatus={toggleTaskToday}
+                 deleteTask={deleteTask}
+                 toggleTaskToday={toggleTaskToday}
+               />
+            ))}
+          </Reorder.Group>
+          {pTasks.length === 0 && <div className="text-center text-zinc-800 font-bold text-6xl opacity-20 mt-20">EMPTY</div>}
+        </div>
       </div>
     );
   };
 
   const CompletedView = () => {
     const list = tasks.filter(t => t.completed).sort((a,b) => new Date(b.completedAt) - new Date(a.completedAt));
+    
+    // 計算總時數
+    const totalMinutes = list.reduce((acc, t) => {
+        if (t.size === 'big') return acc + 90;
+        if (t.size === 'medium') return acc + 30;
+        return acc + 10;
+    }, 0);
+
     return (
       <div className="p-6 min-h-screen bg-[#121212]">
         <header className="flex items-center justify-center relative mb-8 pt-4">
@@ -454,6 +489,20 @@ export default function App() {
           </button>
           <h1 className="text-xl font-black text-white tracking-widest uppercase">History</h1>
         </header>
+
+        {/* 統計儀表板 */}
+        <div className="bg-gradient-to-r from-zinc-800 to-zinc-900 p-6 rounded-3xl border border-white/10 mb-8 flex items-center justify-between shadow-lg">
+            <div>
+                <div className="text-white/40 text-xs font-bold uppercase tracking-widest mb-1">Total Focus</div>
+                <div className="text-3xl font-black text-white flex items-baseline gap-2">
+                    {formatDuration(totalMinutes)}
+                </div>
+            </div>
+            <div className="bg-white/5 p-4 rounded-full">
+                <Timer size={32} className="text-blue-400" />
+            </div>
+        </div>
+
         <div className="space-y-3">
            {list.map(t => (
              <motion.div initial={{opacity:0, y:10}} animate={{opacity:1, y:0}} key={t.id} className="p-4 bg-zinc-900 rounded-2xl flex justify-between items-center border border-white/5">
@@ -478,6 +527,7 @@ export default function App() {
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 1.05 }}
           transition={{ duration: 0.2 }}
+          className="h-full"
         >
           {view === 'home' && <HomeView />}
           {view === 'projects' && <ProjectsView />}
