@@ -22,9 +22,9 @@ const formatDuration = (minutes) => {
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
-// --- 獨立的拖曳組件 (防誤觸關鍵) ---
-const SortableTaskItem = ({ task, updateTaskStatus, deleteTask, toggleTaskToday }) => {
-  const controls = useDragControls(); // 獨立的拖曳控制器
+// --- 獨立的拖曳組件 (修復版) ---
+const SortableTaskItem = ({ task, deleteTask, toggleTaskToday }) => {
+  const controls = useDragControls(); 
 
   const colorStyles = {
     big: "bg-orange-500 shadow-orange-500/30",
@@ -35,9 +35,9 @@ const SortableTaskItem = ({ task, updateTaskStatus, deleteTask, toggleTaskToday 
   return (
     <Reorder.Item 
       value={task} 
-      dragListener={false} // 關閉預設的全卡片拖曳
-      dragControls={controls} // 只接受控制器指令
-      className="relative touch-action-none" // 防止觸控衝突
+      dragListener={false} // 關閉預設拖曳
+      dragControls={controls} // 只接受手把控制
+      className="relative touch-action-none list-none" // 防止觸控衝突
     >
       <div className={cn(
           "mb-3 p-4 rounded-3xl shadow-lg relative overflow-hidden group border border-white/10 select-none flex items-center gap-3",
@@ -63,10 +63,10 @@ const SortableTaskItem = ({ task, updateTaskStatus, deleteTask, toggleTaskToday 
               <Plus size={20}/>
             </button>
             
-            {/* 只有按住這個圖示才能拖動 */}
+            {/* 拖曳手把：加上 touch-action-none 確保優先權 */}
             <div 
               onPointerDown={(e) => controls.start(e)}
-              className="p-2 rounded-full text-white/50 hover:text-white cursor-grab active:cursor-grabbing bg-black/20"
+              className="p-2 rounded-full text-white/50 hover:text-white cursor-grab active:cursor-grabbing bg-black/20 touch-none"
             >
               <GripVertical size={20}/>
             </div>
@@ -83,7 +83,6 @@ const SortableTaskItem = ({ task, updateTaskStatus, deleteTask, toggleTaskToday 
   );
 };
 
-// --- 主程式 ---
 export default function App() {
   const [view, setView] = useState('home');
   const [activeProject, setActiveProject] = useState(null);
@@ -119,7 +118,6 @@ export default function App() {
     localStorage.setItem('my-135-lastActive', lastActive);
   }, [projects, tasks, streak, lastActive]);
 
-  // 連勝 & 每日重置
   useEffect(() => {
     const today = new Date().toDateString();
     if (lastActive !== today) {
@@ -130,7 +128,6 @@ export default function App() {
       }
       setLastActive(today);
     }
-
     const checkReset = () => {
       const now = new Date();
       if (now.getHours() >= 23) {
@@ -162,7 +159,6 @@ export default function App() {
     return totalMinutes / diffDays; 
   };
 
-  // --- 動作 ---
   const triggerConfetti = () => {
     try {
       if (typeof confetti === 'function') {
@@ -229,17 +225,12 @@ export default function App() {
   };
 
   const handleReorder = (newProjectTasksOrder) => {
-    // 這裡我們需要把 "沒有顯示在列表上" 的任務 (例如已完成或已加入今日的) 也保留
     const currentProjectVisibleIds = newProjectTasksOrder.map(t => t.id);
-    
-    // 1. 找出所有不在此次排序列表中的任務 (其他專案 + 本專案已隱藏的)
     const otherTasks = tasks.filter(t => !currentProjectVisibleIds.includes(t.id));
-    
-    // 2. 合併 (新順序在前，其他的在後)
     setTasks([...newProjectTasksOrder, ...otherTasks]);
   };
 
-  // --- UI 元件：主頁任務卡 (不可拖曳) ---
+  // --- UI 元件 ---
   const HomeTaskItem = ({ task }) => {
     const colorStyles = {
       big: "bg-orange-500 shadow-orange-500/30",
@@ -266,14 +257,12 @@ export default function App() {
            <button 
              onClick={(e) => { e.stopPropagation(); toggleTaskToday(task.id); }} 
              className="bg-black/40 p-2 rounded-full hover:bg-red-500 text-white/80 hover:text-white backdrop-blur-md" 
-             title="退回專案"
            >
              <X size={18} />
            </button>
            <button 
              onClick={(e) => { e.stopPropagation(); completeTask(task.id); }} 
              className="bg-white text-black p-2 rounded-full shadow-xl hover:scale-110 transition-transform" 
-             title="完成任務"
            >
              <CheckCircle2 size={20} />
            </button>
@@ -383,7 +372,6 @@ export default function App() {
             const urgency = getProjectUrgency(p);
             const stats = getProjectStats(p.id);
             const daysLeft = Math.ceil((new Date(p.deadline) - new Date()) / (86400000));
-            
             return (
               <motion.div key={p.id} layout onClick={() => { setActiveProject(p); setView('project-detail'); }}
                 className={cn("p-6 rounded-3xl cursor-pointer bg-gradient-to-br border shadow-xl group text-center relative overflow-hidden", getHeatStyle(urgency))}
@@ -409,7 +397,6 @@ export default function App() {
 
   const ProjectDetailView = () => {
     if (!activeProject) return null;
-    // 關鍵修改：過濾掉已完成 AND 已加入今日清單的任務
     const pTasks = tasks.filter(t => t.projectId === activeProject.id && !t.completed && !t.isToday);
     const [newTaskTitle, setNewTaskTitle] = useState('');
     const [newTaskSize, setNewTaskSize] = useState('medium'); 
@@ -429,7 +416,6 @@ export default function App() {
           </button>
         </header>
 
-        {/* 輸入區 */}
         <div className="bg-zinc-900 p-4 rounded-3xl mb-4 border border-zinc-800 flex-shrink-0 shadow-xl z-20">
            <div className="flex gap-2 mb-3">
               {['big', 'medium', 'small'].map(size => (
@@ -452,29 +438,30 @@ export default function App() {
             </div>
         </div>
 
-        {/* 滾動列表區 (加入 overflow-y-auto 與 scrollbar 樣式) */}
-        <div className="flex-1 overflow-y-auto pr-1 -mr-2 pb-20 custom-scrollbar">
-          <Reorder.Group axis="y" values={pTasks} onReorder={handleReorder} className="space-y-4">
+        {/* 關鍵修復：將 Reorder.Group 設為滾動容器，並加入 layoutScroll */}
+        <Reorder.Group 
+            axis="y" 
+            values={pTasks} 
+            onReorder={handleReorder} 
+            className="flex-1 overflow-y-auto pr-1 -mr-2 pb-20 custom-scrollbar space-y-4"
+            layoutScroll 
+        >
             {pTasks.map((t) => (
                <SortableTaskItem 
                  key={t.id} 
                  task={t} 
-                 updateTaskStatus={toggleTaskToday}
                  deleteTask={deleteTask}
                  toggleTaskToday={toggleTaskToday}
                />
             ))}
-          </Reorder.Group>
-          {pTasks.length === 0 && <div className="text-center text-zinc-800 font-bold text-6xl opacity-20 mt-20">EMPTY</div>}
-        </div>
+            {pTasks.length === 0 && <div className="text-center text-zinc-800 font-bold text-6xl opacity-20 mt-20">EMPTY</div>}
+        </Reorder.Group>
       </div>
     );
   };
 
   const CompletedView = () => {
     const list = tasks.filter(t => t.completed).sort((a,b) => new Date(b.completedAt) - new Date(a.completedAt));
-    
-    // 計算總時數
     const totalMinutes = list.reduce((acc, t) => {
         if (t.size === 'big') return acc + 90;
         if (t.size === 'medium') return acc + 30;
@@ -490,7 +477,6 @@ export default function App() {
           <h1 className="text-xl font-black text-white tracking-widest uppercase">History</h1>
         </header>
 
-        {/* 統計儀表板 */}
         <div className="bg-gradient-to-r from-zinc-800 to-zinc-900 p-6 rounded-3xl border border-white/10 mb-8 flex items-center justify-between shadow-lg">
             <div>
                 <div className="text-white/40 text-xs font-bold uppercase tracking-widest mb-1">Total Focus</div>
