@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence, Reorder, useDragControls } from 'framer-motion';
 import { 
   CheckCircle2, Plus, ArrowLeft, Calendar, 
-  Clock, Trash2, ChevronRight, BarChart3, List, Flame, Zap, Trophy, X, GripVertical, Timer, Settings, Bell, PartyPopper
+  Clock, Trash2, ChevronRight, BarChart3, List, Flame, Zap, Trophy, X, GripVertical, Timer, Settings, Bell, PartyPopper, Download, Upload, Copy, Check
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -50,7 +50,7 @@ const SortableTaskItem = ({ task, deleteTask, toggleTaskToday, completeTask }) =
           <div className="flex items-center gap-2 text-[10px] font-bold text-white/80 bg-black/20 px-3 py-1 rounded-full uppercase tracking-wider">
             <span>{task.size === 'quick' ? 'Quick' : task.size}</span>
             <span>•</span>
-            <span>{task.size === 'big' ? '90m' : task.size === 'medium' ? '30m' : task.size === 'small' ? '10m' : '2m'}</span>
+            <span>{task.projectName || projects.find(p => p.id === task.projectId)?.name}</span>
           </div>
         </div>
 
@@ -67,7 +67,6 @@ const SortableTaskItem = ({ task, deleteTask, toggleTaskToday, completeTask }) =
             >
               <GripVertical size={20}/>
             </div>
-            {/* 專案視圖也可以直接完成任務 */}
             <button 
               onClick={(e) => { e.stopPropagation(); completeTask(task.id); }} 
               className="bg-black/20 p-2 rounded-full hover:bg-green-500 text-white"
@@ -84,7 +83,7 @@ const SortableTaskItem = ({ task, deleteTask, toggleTaskToday, completeTask }) =
 export default function App() {
   const [view, setView] = useState('home');
   const [activeProject, setActiveProject] = useState(null);
-  const [completedProjectInfo, setCompletedProjectInfo] = useState(null); // 存儲剛完成的專案資訊
+  const [completedProjectInfo, setCompletedProjectInfo] = useState(null); 
   
   // --- 資料狀態 ---
   const [projects, setProjects] = useState(() => {
@@ -164,7 +163,6 @@ export default function App() {
 
   // --- 邏輯計算 ---
   const getProjectStats = (projectId) => {
-    // 注意：這裡我們需要計算「所有」任務（包含已完成的）來顯示總投入時間
     const pTasks = tasks.filter(t => t.projectId === projectId);
     const totalMinutes = pTasks.reduce((acc, t) => {
       if (t.size === 'big') return acc + 90;
@@ -198,7 +196,6 @@ export default function App() {
     } catch (e) { console.warn(e); }
   };
 
-  // 豪華煙火 (專案完成用)
   const triggerFireworks = () => {
     const duration = 3 * 1000;
     const animationEnd = Date.now() + duration;
@@ -224,7 +221,6 @@ export default function App() {
     setActiveProject(newProject);
   };
 
-  // 刪除專案 (如果 keepTasks 為 true，則只是封存專案，保留任務紀錄)
   const deleteProject = (id, archiveOnly = false) => {
     if (archiveOnly) {
        setProjects(projects.map(p => p.id === id ? { ...p, isArchived: true } : p));
@@ -242,7 +238,7 @@ export default function App() {
     setTasks([...tasks, {
       id: generateId(), projectId, title, size,
       completed: false, isToday: false, completedAt: null, isQuick: false,
-      projectName: projects.find(p => p.id === projectId)?.name // Snapshot project name for history
+      projectName: projects.find(p => p.id === projectId)?.name 
     }]);
   };
 
@@ -257,33 +253,21 @@ export default function App() {
   const completeTask = (taskId) => {
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
-
-    // 1. 基本特效
     triggerConfetti();
-
-    // 2. 更新任務狀態
     const updatedTasks = tasks.map(t => t.id === taskId ? { ...t, completed: true, completedAt: new Date(), isToday: false } : t);
     setTasks(updatedTasks);
 
-    // 3. 檢查專案是否全部完成 (若是專案任務)
     if (!task.isQuick) {
        const projectTasks = updatedTasks.filter(t => t.projectId === task.projectId);
        const hasRemaining = projectTasks.some(t => !t.completed);
-       
-       // 如果沒有剩餘任務，且該專案確實有任務 (避免空專案誤判)
        if (!hasRemaining && projectTasks.length > 0) {
           const proj = projects.find(p => p.id === task.projectId);
           if (proj && !proj.isArchived) {
-             // 觸發專案完成流程
              setTimeout(() => {
                 triggerFireworks();
                 const stats = getProjectStats(task.projectId);
-                setCompletedProjectInfo({
-                   id: proj.id,
-                   name: proj.name,
-                   duration: stats.totalMinutes
-                });
-             }, 800); // 稍微延遲讓用戶先看到任務勾選動畫
+                setCompletedProjectInfo({ id: proj.id, name: proj.name, duration: stats.totalMinutes });
+             }, 800);
           }
        }
     }
@@ -314,6 +298,38 @@ export default function App() {
     const currentProjectVisibleIds = newProjectTasksOrder.map(t => t.id);
     const otherTasks = tasks.filter(t => !currentProjectVisibleIds.includes(t.id));
     setTasks([...newProjectTasksOrder, ...otherTasks]);
+  };
+
+  // --- 資料備份功能 ---
+  const exportData = () => {
+    const data = JSON.stringify({ projects, tasks, streak, settings });
+    navigator.clipboard.writeText(data).then(() => {
+      alert("✅ 資料已複製到剪貼簿！\n\n請打開你的記事本 APP 貼上保存，或是傳送給自己的 LINE/Email 備份。");
+    }).catch(() => {
+      alert("❌ 複製失敗，請手動選取複製");
+    });
+  };
+
+  const importData = () => {
+    const input = prompt("請貼上備份的資料代碼：");
+    if (input) {
+      try {
+        const data = JSON.parse(input);
+        if (data.projects && data.tasks) {
+          if(confirm("⚠️ 警告：這將會覆蓋目前的資料，確定要還原嗎？")) {
+            setProjects(data.projects);
+            setTasks(data.tasks);
+            setStreak(data.streak || 0);
+            setSettings(data.settings || settings);
+            alert("✅ 資料還原成功！");
+          }
+        } else {
+          alert("❌ 資料格式錯誤");
+        }
+      } catch (e) {
+        alert("❌ 無效的資料代碼");
+      }
+    }
   };
 
   // --- UI Components ---
@@ -445,13 +461,30 @@ export default function App() {
           <h1 className="text-xl font-black text-white tracking-widest uppercase">Settings</h1>
         </header>
         <div className="space-y-6">
+           {/* 時間設定 */}
            <div className="bg-zinc-900 p-6 rounded-3xl border border-white/10">
               <h3 className="text-white font-bold mb-4 flex items-center gap-2"><Clock size={20}/> 每日重置時間</h3>
               <input type="time" value={settings.resetTime} onChange={(e) => setSettings({...settings, resetTime: e.target.value})} className="bg-black text-white text-2xl p-4 rounded-xl w-full text-center outline-none border border-white/20 focus:border-blue-500" />
            </div>
+           
+           {/* 通知設定 */}
            <div className="bg-zinc-900 p-6 rounded-3xl border border-white/10">
               <h3 className="text-white font-bold mb-4 flex items-center gap-2"><Bell size={20}/> 任務提醒</h3>
               {settings.enableNotify ? (<button onClick={() => setSettings({...settings, enableNotify: false})} className="w-full py-4 bg-green-500/20 text-green-500 border border-green-500 rounded-xl font-bold">已啟用通知</button>) : (<button onClick={requestNotification} className="w-full py-4 bg-white/5 text-white border border-white/20 rounded-xl font-bold hover:bg-white/10">點擊啟用通知權限</button>)}
+           </div>
+
+           {/* 資料備份區 */}
+           <div className="bg-zinc-900 p-6 rounded-3xl border border-white/10">
+              <h3 className="text-white font-bold mb-4 flex items-center gap-2">💾 資料備份與還原</h3>
+              <p className="text-xs text-white/50 mb-4">若要更換 APP 圖示或換手機，請先將資料匯出備份。</p>
+              <div className="flex gap-2">
+                 <button onClick={exportData} className="flex-1 py-4 bg-blue-600 hover:bg-blue-500 rounded-xl font-bold text-white flex items-center justify-center gap-2">
+                    <Copy size={18}/> 匯出資料
+                 </button>
+                 <button onClick={importData} className="flex-1 py-4 bg-zinc-700 hover:bg-zinc-600 rounded-xl font-bold text-white flex items-center justify-center gap-2">
+                    <Download size={18}/> 匯入資料
+                 </button>
+              </div>
            </div>
         </div>
       </div>
@@ -461,7 +494,6 @@ export default function App() {
   const ProjectsView = () => {
     const [isAdding, setIsAdding] = useState(false);
     const [newProj, setNewProj] = useState({ name: '', goal: '', deadline: '' });
-    // 只顯示未封存的專案
     const activeProjects = projects.filter(p => !p.isArchived);
     const sorted = [...activeProjects].sort((a, b) => getProjectUrgency(b) - getProjectUrgency(a));
 
@@ -597,7 +629,6 @@ export default function App() {
         </motion.div>
       </AnimatePresence>
 
-      {/* 專案完成模態窗 */}
       <AnimatePresence>
         {completedProjectInfo && (
            <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-6">
