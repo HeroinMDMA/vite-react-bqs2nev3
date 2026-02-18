@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence, Reorder, useDragControls } from 'framer-motion';
 import { 
   CheckCircle2, Plus, ArrowLeft, Calendar, 
-  Clock, Trash2, ChevronRight, BarChart3, List, Flame, Zap, Trophy, X, GripVertical, Timer, Settings, Bell, PartyPopper, Download, Upload, Copy, Check
+  Clock, Trash2, List, Flame, Zap, Trophy, X, GripVertical, Timer, Settings, Bell, PartyPopper, Download, Upload, Copy
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -50,7 +50,8 @@ const SortableTaskItem = ({ task, deleteTask, toggleTaskToday, completeTask }) =
           <div className="flex items-center gap-2 text-[10px] font-bold text-white/80 bg-black/20 px-3 py-1 rounded-full uppercase tracking-wider">
             <span>{task.size === 'quick' ? 'Quick' : task.size}</span>
             <span>•</span>
-            <span>{task.projectName || projects.find(p => p.id === task.projectId)?.name}</span>
+            {/* 這裡增加了保護，避免找不到專案名稱時報錯 */}
+            <span>{task.projectName || "未分類"}</span>
           </div>
         </div>
 
@@ -310,28 +311,6 @@ export default function App() {
     });
   };
 
-  const importData = () => {
-    const input = prompt("請貼上備份的資料代碼：");
-    if (input) {
-      try {
-        const data = JSON.parse(input);
-        if (data.projects && data.tasks) {
-          if(confirm("⚠️ 警告：這將會覆蓋目前的資料，確定要還原嗎？")) {
-            setProjects(data.projects);
-            setTasks(data.tasks);
-            setStreak(data.streak || 0);
-            setSettings(data.settings || settings);
-            alert("✅ 資料還原成功！");
-          }
-        } else {
-          alert("❌ 資料格式錯誤");
-        }
-      } catch (e) {
-        alert("❌ 無效的資料代碼");
-      }
-    }
-  };
-
   // --- UI Components ---
   
   const HomeTaskItem = ({ task }) => {
@@ -348,7 +327,7 @@ export default function App() {
           <div className="flex items-center gap-2 text-[10px] font-bold text-white/80 bg-black/20 px-3 py-1 rounded-full uppercase tracking-wider">
             <span>{task.size}</span>
             <span>•</span>
-            <span>{task.projectName || projects.find(p => p.id === task.projectId)?.name}</span>
+            <span>{task.projectName || projects.find(p => p.id === task.projectId)?.name || "Project"}</span>
           </div>
         </div>
         <div className="absolute right-3 top-1/2 -translate-y-1/2 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity z-20">
@@ -454,13 +433,38 @@ export default function App() {
   };
 
   const SettingsView = () => {
+    const [isImporting, setIsImporting] = useState(false);
+    const [importCode, setImportCode] = useState('');
+
+    const handleImport = () => {
+        if(!importCode) return;
+        try {
+            const data = JSON.parse(importCode);
+            if (data.projects && data.tasks) {
+              if(confirm("⚠️ 警告：這將會覆蓋目前的資料，確定要還原嗎？")) {
+                setProjects(data.projects);
+                setTasks(data.tasks);
+                setStreak(data.streak || 0);
+                setSettings(data.settings || settings);
+                alert("✅ 資料還原成功！");
+                setIsImporting(false);
+                setImportCode('');
+              }
+            } else {
+              alert("❌ 資料格式錯誤：缺少 projects 或 tasks");
+            }
+        } catch(e) {
+            alert("❌ 解析失敗：請確認複製了完整的 JSON 代碼");
+        }
+    };
+
     return (
       <div className="p-6 min-h-screen bg-[#121212]">
          <header className="flex items-center gap-4 mb-8 pt-4">
           <button onClick={() => setView('home')} className="p-3 bg-zinc-800 rounded-2xl"><ArrowLeft className="text-white" /></button>
           <h1 className="text-xl font-black text-white tracking-widest uppercase">Settings</h1>
         </header>
-        <div className="space-y-6">
+        <div className="space-y-6 pb-20">
            {/* 時間設定 */}
            <div className="bg-zinc-900 p-6 rounded-3xl border border-white/10">
               <h3 className="text-white font-bold mb-4 flex items-center gap-2"><Clock size={20}/> 每日重置時間</h3>
@@ -473,18 +477,34 @@ export default function App() {
               {settings.enableNotify ? (<button onClick={() => setSettings({...settings, enableNotify: false})} className="w-full py-4 bg-green-500/20 text-green-500 border border-green-500 rounded-xl font-bold">已啟用通知</button>) : (<button onClick={requestNotification} className="w-full py-4 bg-white/5 text-white border border-white/20 rounded-xl font-bold hover:bg-white/10">點擊啟用通知權限</button>)}
            </div>
 
-           {/* 資料備份區 */}
+           {/* 資料備份區 - 大改版 */}
            <div className="bg-zinc-900 p-6 rounded-3xl border border-white/10">
               <h3 className="text-white font-bold mb-4 flex items-center gap-2">💾 資料備份與還原</h3>
               <p className="text-xs text-white/50 mb-4">若要更換 APP 圖示或換手機，請先將資料匯出備份。</p>
-              <div className="flex gap-2">
-                 <button onClick={exportData} className="flex-1 py-4 bg-blue-600 hover:bg-blue-500 rounded-xl font-bold text-white flex items-center justify-center gap-2">
-                    <Copy size={18}/> 匯出資料
-                 </button>
-                 <button onClick={importData} className="flex-1 py-4 bg-zinc-700 hover:bg-zinc-600 rounded-xl font-bold text-white flex items-center justify-center gap-2">
-                    <Download size={18}/> 匯入資料
-                 </button>
-              </div>
+              
+              {!isImporting ? (
+                  <div className="flex gap-2">
+                     <button onClick={exportData} className="flex-1 py-4 bg-blue-600 hover:bg-blue-500 rounded-xl font-bold text-white flex items-center justify-center gap-2">
+                        <Copy size={18}/> 匯出資料
+                     </button>
+                     <button onClick={() => setIsImporting(true)} className="flex-1 py-4 bg-zinc-700 hover:bg-zinc-600 rounded-xl font-bold text-white flex items-center justify-center gap-2">
+                        <Download size={18}/> 匯入資料
+                     </button>
+                  </div>
+              ) : (
+                  <div className="space-y-3">
+                      <textarea 
+                        value={importCode}
+                        onChange={(e) => setImportCode(e.target.value)}
+                        placeholder="請在此貼上完整的資料代碼..."
+                        className="w-full h-40 bg-black text-white p-4 rounded-xl text-xs font-mono outline-none border border-white/20 focus:border-blue-500 resize-none"
+                      />
+                      <div className="flex gap-2">
+                          <button onClick={() => setIsImporting(false)} className="flex-1 py-3 bg-zinc-700 rounded-xl font-bold text-white">取消</button>
+                          <button onClick={handleImport} className="flex-1 py-3 bg-green-600 hover:bg-green-500 rounded-xl font-bold text-white">確認還原</button>
+                      </div>
+                  </div>
+              )}
            </div>
         </div>
       </div>
