@@ -23,7 +23,7 @@ const formatDuration = (minutes) => {
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
-// --- 獨立的拖曳組件 (任務) ---
+// --- 獨立的拖曳組件 (任務) - 修正排版版 ---
 const SortableTaskItem = ({ task, deleteTask, toggleTaskToday, completeTask }) => {
   const controls = useDragControls(); 
 
@@ -36,19 +36,21 @@ const SortableTaskItem = ({ task, deleteTask, toggleTaskToday, completeTask }) =
 
   return (
     <Reorder.Item value={task} dragListener={false} dragControls={controls} className="relative touch-action-none list-none">
-      <div className={cn("mb-3 p-4 rounded-3xl shadow-lg relative overflow-hidden border border-white/10 select-none flex items-center gap-2", colorStyles[task.size] || "bg-zinc-800")}>
-        {/* 增加 pr-16 避免文字與右側常駐按鈕重疊 */}
-        <div className="flex-1 relative z-10 flex flex-col items-start justify-center gap-1 pl-2 pr-16">
-          <h3 className="font-bold text-white text-lg drop-shadow-md text-left leading-tight">{task.title}</h3>
-          <div className="flex items-center gap-2 text-[10px] font-bold text-white/80 bg-black/20 px-3 py-1 rounded-full uppercase tracking-wider">
+      {/* 使用 flex items-center justify-between 讓左右兩側自然推開 */}
+      <div className={cn("mb-3 p-4 rounded-3xl shadow-lg relative overflow-hidden border border-white/10 select-none flex items-center justify-between gap-3", colorStyles[task.size] || "bg-zinc-800")}>
+        
+        {/* 左側：文字內容區 */}
+        <div className="relative z-10 flex flex-col items-start justify-center gap-1 flex-1 min-w-0">
+          <h3 className="font-bold text-white text-lg drop-shadow-md text-left leading-tight truncate w-full">{task.title}</h3>
+          <div className="flex items-center gap-2 text-[10px] font-bold text-white/80 bg-black/20 px-3 py-1 rounded-full uppercase tracking-wider shrink-0">
             <span>{task.size === 'quick' ? 'Quick' : task.size}</span>
             <span>•</span>
             <span className="truncate max-w-[100px]">{task.projectName || "未分類"}</span>
           </div>
         </div>
 
-        {/* 移除 opacity-0 hover 限制，改為常駐顯示 */}
-        <div className="absolute right-3 top-1/2 -translate-y-1/2 flex flex-col gap-2 z-20">
+        {/* 右側：按鈕區 (改為橫向排列 flex-row) */}
+        <div className="relative z-20 flex items-center gap-2 shrink-0">
             {task.size !== 'quick' && (
               <button onClick={(e) => { e.stopPropagation(); toggleTaskToday(task.id); }} className={cn("p-2 rounded-full text-white hover:text-black transition-colors shadow-md", task.isToday ? "bg-green-500" : "bg-white/20 hover:bg-white")}>
                 <Plus size={16}/>
@@ -57,6 +59,9 @@ const SortableTaskItem = ({ task, deleteTask, toggleTaskToday, completeTask }) =
             <div onPointerDown={(e) => controls.start(e)} className="p-2 rounded-full text-white hover:text-white cursor-grab active:cursor-grabbing bg-black/30 touch-none shadow-md">
               <GripVertical size={16}/>
             </div>
+            <button onClick={(e) => { e.stopPropagation(); completeTask(task.id); }} className="bg-black/30 p-2 rounded-full hover:bg-green-500 text-white shadow-md">
+              <CheckCircle2 size={16}/>
+            </button>
             <button onClick={(e) => { e.stopPropagation(); deleteTask(task.id); }} className="bg-black/30 p-2 rounded-full hover:bg-red-500 text-white shadow-md">
               <Trash2 size={16}/>
             </button>
@@ -106,14 +111,14 @@ export default function App() {
       const [rh, rm] = settings.resetTime.split(':').map(Number);
       const resetMins = rh * 60 + rm;
 
-      // 1. 執行重置 (給予 5 分鐘寬容值，並記錄今天已重置)
+      // 1. 執行重置
       const lastReset = localStorage.getItem('my-135-lastReset') || '';
       if (currentMins >= resetMins && currentMins < resetMins + 5 && lastReset !== todayStr) {
          setTasks(prev => prev.map(t => (t.isToday && !t.completed) ? { ...t, isToday: false } : t));
          localStorage.setItem('my-135-lastReset', todayStr);
       }
 
-      // 2. 執行提醒 (30分鐘前)
+      // 2. 執行提醒
       if (settings.enableNotify) {
         let notifyMins = resetMins - 30;
         if (notifyMins < 0) notifyMins += 24 * 60;
@@ -159,17 +164,12 @@ export default function App() {
     return { totalMins, completedMins, remainingMins, count: pTasks.length };
   };
 
-  // 優化後的急迫度演算法：動態扣除已完成時間
   const getProjectUrgency = (project) => {
     const { remainingMins } = getProjectStats(project.id);
-    if (remainingMins <= 0) return 0; // 快完成的沒那麼急
-
+    if (remainingMins <= 0) return 0; 
     const deadline = new Date(project.deadline);
     const today = new Date();
-    // 剩餘天數，至少為 0.1 避免除以零
     const diffDays = Math.max(0.1, (deadline.getTime() - today.getTime()) / 86400000); 
-    
-    // 演算法：剩餘小時數 / 剩餘天數 = 每天需要投入的時數
     return (remainingMins / 60) / diffDays; 
   };
 
@@ -290,25 +290,27 @@ export default function App() {
       return false;
   };
 
-  // --- 視圖元件 ---
-  
+  // --- 主頁任務卡片 - 修正排版版 ---
   const HomeTaskItem = ({ task }) => {
     const colorStyles = { big: "bg-orange-500 shadow-orange-500/30", medium: "bg-blue-600 shadow-blue-600/30", small: "bg-emerald-500 shadow-emerald-500/30" };
     return (
-      <div className={cn("mb-3 p-4 rounded-3xl shadow-lg relative overflow-hidden border border-white/10 select-none", colorStyles[task.size] || "bg-zinc-800")}>
-        <div className="relative z-10 flex flex-col items-center justify-center text-center gap-2">
-          <h3 className="font-bold text-white text-lg drop-shadow-md">{task.title}</h3>
-          <div className="flex items-center gap-2 text-[10px] font-bold text-white/80 bg-black/20 px-3 py-1 rounded-full uppercase tracking-wider">
-            <span>{task.size}</span><span>•</span><span>{task.projectName || "Project"}</span>
+      <div className={cn("mb-3 p-4 rounded-3xl shadow-lg relative overflow-hidden border border-white/10 select-none flex items-center justify-between gap-3", colorStyles[task.size] || "bg-zinc-800")}>
+        <div className="relative z-10 flex flex-col items-start justify-center gap-1 flex-1 min-w-0">
+          <h3 className="font-bold text-white text-lg drop-shadow-md text-left leading-tight truncate w-full">{task.title}</h3>
+          <div className="flex items-center gap-2 text-[10px] font-bold text-white/80 bg-black/20 px-3 py-1 rounded-full uppercase tracking-wider shrink-0">
+            <span>{task.size}</span><span>•</span><span className="truncate max-w-[100px]">{task.projectName || "Project"}</span>
           </div>
         </div>
-        <div className="absolute right-3 top-1/2 -translate-y-1/2 flex flex-col gap-2 z-20">
-           <button onClick={() => toggleTaskToday(task.id)} className="bg-black/40 p-2 rounded-full hover:bg-red-500 text-white shadow-md"><X size={16} /></button>
-           <button onClick={() => completeTask(task.id)} className="bg-white text-black p-2 rounded-full hover:scale-110 transition-transform shadow-xl"><CheckCircle2 size={18} /></button>
+        <div className="relative z-20 flex items-center gap-2 shrink-0">
+           <button onClick={(e) => { e.stopPropagation(); toggleTaskToday(task.id); }} className="bg-black/40 p-2 rounded-full hover:bg-red-500 text-white shadow-md"><X size={16} /></button>
+           <button onClick={(e) => { e.stopPropagation(); completeTask(task.id); }} className="bg-white text-black p-2 rounded-full hover:scale-110 transition-transform shadow-xl"><CheckCircle2 size={18} /></button>
         </div>
+        <div className="absolute inset-0 bg-gradient-to-br from-white/20 to-transparent pointer-events-none" />
       </div>
     );
   };
+
+  // --- 視圖 ---
 
   const HomeView = () => {
     const todayTasks = tasks.filter(t => t.isToday && !t.completed);
@@ -485,13 +487,12 @@ export default function App() {
     const activeProjects = projects.filter(p => !p.isArchived);
     const sorted = [...activeProjects].sort((a, b) => getProjectUrgency(b) - getProjectUrgency(a));
 
-    // 五段急迫度顏色計算 (依據每日期望投入小時數)
     const getHeatStyle = (urgency) => {
-       if (urgency >= 3) return "from-red-600 to-rose-900 border-red-500/50 shadow-red-900/20"; // 爆肝級
-       if (urgency >= 1.5) return "from-orange-500 to-amber-800 border-orange-500/50 shadow-orange-900/20"; // 緊急級
-       if (urgency >= 0.8) return "from-yellow-500 to-amber-700 border-yellow-500/50 shadow-yellow-900/20"; // 警告級 (新增)
-       if (urgency >= 0.3) return "from-blue-600 to-indigo-900 border-blue-500/50 shadow-blue-900/20"; // 正常級
-       return "from-emerald-600 to-teal-900 border-emerald-500/50 shadow-emerald-900/20"; // 悠閒級 (新增)
+       if (urgency >= 3) return "from-red-600 to-rose-900 border-red-500/50 shadow-red-900/20"; 
+       if (urgency >= 1.5) return "from-orange-500 to-amber-800 border-orange-500/50 shadow-orange-900/20"; 
+       if (urgency >= 0.8) return "from-yellow-500 to-amber-700 border-yellow-500/50 shadow-yellow-900/20"; 
+       if (urgency >= 0.3) return "from-blue-600 to-indigo-900 border-blue-500/50 shadow-blue-900/20"; 
+       return "from-emerald-600 to-teal-900 border-emerald-500/50 shadow-emerald-900/20"; 
     };
 
     return (
@@ -516,7 +517,6 @@ export default function App() {
             const urgency = getProjectUrgency(p);
             const stats = getProjectStats(p.id);
             const daysLeft = Math.max(0, Math.ceil((new Date(p.deadline).getTime() - new Date().getTime()) / 86400000));
-            // 避免除以零
             const progressPercent = stats.totalMins > 0 ? Math.round((stats.completedMins / stats.totalMins) * 100) : 0;
 
             return (
@@ -524,7 +524,6 @@ export default function App() {
                 <h2 className="text-2xl font-black text-white mb-2 drop-shadow-md">{p.name}</h2>
                 <p className="text-sm text-white/90 mb-4 font-medium">{p.goal}</p>
                 
-                {/* 狀態列改版：顯示完成度與剩餘天數 */}
                 <div className="flex flex-col items-center gap-2">
                    <div className="w-full bg-black/30 rounded-full h-1.5 mb-1 overflow-hidden">
                       <div className="bg-white h-full transition-all" style={{ width: `${progressPercent}%` }} />
